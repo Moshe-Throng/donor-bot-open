@@ -8,6 +8,7 @@ from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain_community.chat_models import ChatOpenAI
+from langchain.prompts import PromptTemplate
 
 load_dotenv()  # Load variables from .env
 
@@ -20,10 +21,24 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 # Load OpenAI-powered vector index (built from EU donor PDF)
 embeddings = OpenAIEmbeddings()
 vector_db = FAISS.load_local("eu_vector_index", embeddings, allow_dangerous_deserialization=True)
+
+# Define a strict prompt to limit GPT to the document content only
+custom_prompt = PromptTemplate.from_template(
+    """You are a donor strategy assistant. Use only the information from the provided context to answer the question.
+If the answer is not in the context, say \"I don't know.\"
+
+Context:
+{context}
+
+Question: {question}
+"""
+)
+
 qa_chain = RetrievalQA.from_chain_type(
     llm=ChatOpenAI(),
     retriever=vector_db.as_retriever(),
-    chain_type="stuff"
+    chain_type="stuff",
+    chain_type_kwargs={"prompt": custom_prompt}
 )
 
 @app.route('/')
