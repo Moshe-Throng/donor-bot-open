@@ -4,10 +4,10 @@ from flask import Flask, request
 import requests
 import os
 from dotenv import load_dotenv
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 
 load_dotenv()  # Load variables from .env
 
@@ -19,7 +19,7 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Load OpenAI-powered vector index (built from EU donor PDF)
 embeddings = OpenAIEmbeddings()
-vector_db = FAISS.load_local("eu_vector_index", embeddings)
+vector_db = FAISS.load_local("eu_vector_index", embeddings, allow_dangerous_deserialization=True)
 qa_chain = RetrievalQA.from_chain_type(
     llm=ChatOpenAI(),
     retriever=vector_db.as_retriever(),
