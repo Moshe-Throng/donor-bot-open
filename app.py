@@ -1,53 +1,70 @@
+# app.py
+
 from flask import Flask, request
 import requests
 import os
-from openai import OpenAI
+from dotenv import load_dotenv
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.chains import RetrievalQA
+from langchain.chat_models import ChatOpenAI
+
+load_dotenv()  # Load variables from .env
 
 app = Flask(__name__)
 
-# Load API keys from environment variables
+# Telegram and OpenAI setup
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Set up OpenAI client
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Load OpenAI-powered vector index (built from EU donor PDF)
+embeddings = OpenAIEmbeddings()
+vector_db = FAISS.load_local("eu_vector_index", embeddings)
+qa_chain = RetrievalQA.from_chain_type(
+    llm=ChatOpenAI(),
+    retriever=vector_db.as_retriever(),
+    chain_type="stuff"
+)
 
 @app.route('/')
 def home():
-    return "Bot is running with GPT!"
+    return "Bot is running with GPT + EU document search!"
 
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     try:
         data = request.get_json()
-        print("Incoming data:", data)
+        if "message" not in data:
+            return {"ok": True}
 
-        if "message" in data:
-            chat_id = data["message"]["chat"]["id"]
-            text = data["message"].get("text", "")
+        chat_id = data["message"]["chat"]["id"]
+        text = data["message"].get("text", "").strip()
 
-            if not text:
-                reply = "Sorry, I can only respond to text messages."
+        if text.startswith("/donor"):
+            try:
+                _, donor, country = text.split(" ", 2)
+                question = f"What is {donor}'s current development strategy in {country}?"
+            except ValueError:
+                reply = "Please use the format: /donor [Donor] [Country], e.g. /donor EU Ethiopia"
             else:
-                # Call OpenAI GPT
-                response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": text}
-                    ]
-                )
-                reply = response.choices[0].message.content.strip()
+                try:
+                    reply = qa_chain.run(question)
+                except Exception as e:
+                    reply = f"❌ Error answering from donor document: {e}"
 
-            # Send reply to Telegram
             requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
                 "chat_id": chat_id,
                 "text": reply
             })
+            return {"ok": True}
 
+        # Fallback reply
+        requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": "Hi! Try /donor EU Ethiopia to get a document-based strategy summary."
+        })
         return {"ok": True}
 
     except Exception as e:
-        print("❌ Error:", e)
+        print("Webhook error:", e)
         return {"ok": False, "error": str(e)}, 500
