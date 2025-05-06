@@ -2,3 +2,8 @@ flask
 requests
 gunicorn
 openai>=1.0.0
+openai
+faiss-cpu
+python-dotenv
+PyPDF2
+tiktoken
